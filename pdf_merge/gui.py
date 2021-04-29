@@ -1,89 +1,50 @@
-import sys
+import io
 import tkinter as tk
-import tkinter.messagebox as tkm
-from ctypes import windll
-from dataclasses import dataclass
-from tkinter import StringVar, Variable, ttk
+from dataclasses import dataclass, asdict
 from tkinter import filedialog as fd
+from typing import Iterable, Union, NewType
 
-from PyPDF2 import PdfFileMerger
+DialogAllowedFileTypes = NewType("DialogAllowedFileTypes", Iterable[tuple[str, Union[str, Iterable[str]]]])
 
+ALLOWED_INPUT_TYPES: DialogAllowedFileTypes = ("pdf", (".pdf",)), (
+    "pdf", ".pdf"), ("txt", ".txt"), ("", "*")
+INPUT_FILES_DIALOG_TITLE: str = "Select the Files to Merge"
 
-def input_file_selection_button_callback():
-    files = fd.askopenfilenames(filetypes=(("pdf", "*.pdf"), ("txt", "*.txt"), ("*", "*")))
-    n = len(files)
-    GUI.num_files_selected_text.set(f"{len(files)} file{'s' if n != 1 else ''} Selected")
-    GUI.input_files.set(files)
-    if n:
-        GUI.save_as_button.configure(state="normal")
-    else:
-        GUI.save_as_button.configure(state="disabled")
+SAVE_AS_ALLOWED_TYPES: DialogAllowedFileTypes = ("pdf", ".pdf"),
+SAVE_AS_DIALOG_TITLE: str = "Save As..."
+SAVE_AS_DEFAULT_FILE_NAME: str = "combined.pdf"
 
 
-def output_file_callback():
-    of = fd.asksaveasfile(initialfile="combined.pdf", filetypes=(("pdf", "*.pdf"),), mode="wb")
-    files = GUI.input_files.get()
-    try:
-        if of and files:
-            pdf_merger = PdfFileMerger()
-            for f in files:
-                if f.endswith(".pdf"):
-                    pdf_merger.append(f)
-            pdf_merger.write(of)
-            tkm.showinfo("", message="Done!")
-    except Exception as e:
-        tkm.showerror(e)
-        sys.exit(1)
-    finally:
-        sys.exit(0)
+@dataclass
+class DialogParams:
+    filetypes: Iterable[tuple[str, str]] = None
+    title: str = None
+    initialfile: str = None
+
+    def as_dict(self):
+        return asdict(self)
 
 
 @dataclass
 class GUI:
-    PADDING = {
-        "padx": 10,
-        "pady": 10,
-    }
+    input_params: DialogParams
+    save_as_params: DialogParams
 
-    WINDOW_SIZE = {
-        "width": 300,
-        "height": 50,
-    }
+    def ask_get_input_file_paths(self) -> tuple[str]:
+        return fd.askopenfilenames(multiple=True, **self.input_params.as_dict())
 
-    window = tk.Tk()
-    window.wm_minsize(**WINDOW_SIZE)
-    window.resizable(False, False)
-    window.title("PDF Merge")
+    def ask_get_output_file_text_buffer(self) -> io.TextIOWrapper:
+        return fd.asksaveasfile(**self.save_as_params.as_dict())
 
-    input_files = Variable(master=window, value=None, name="INPUT_FILES")
-    num_files_selected_text = StringVar(master=window, value="0 files selected")
-
-    file_input_frame = ttk.Frame(master=window)
-    ttk.Label(text="Select Input Files:", master=file_input_frame).grid(row=0, column=0,
-                                                                        **PADDING)
-    num_files_selected_label = ttk.Label(textvariable=num_files_selected_text, master=file_input_frame)
-
-    save_as_button = ttk.Button(text="Save As...".center(25), master=file_input_frame, state="disabled",
-                                command=output_file_callback)
+    @classmethod
+    def _hide_root_window(cls):
+        tk.Tk().withdraw()
 
     def __post_init__(self):
-        ttk.Button(text="Browse...".center(25), master=self.file_input_frame,
-                   command=input_file_selection_button_callback).grid(
-            row=0, column=1,
-            **self.PADDING
-        )
-
-        self.num_files_selected_label.grid(row=1, column=0, **self.PADDING)
-
-        self.save_as_button.grid(
-            row=1, column=1,
-            **self.PADDING
-        )
-
-        self.file_input_frame.pack()
-        self.window.mainloop()
+        self._hide_root_window()
 
 
 def get_gui() -> GUI:
-    windll.shcore.SetProcessDpiAwareness(1)
-    return GUI()
+    input_params = DialogParams(ALLOWED_INPUT_TYPES, INPUT_FILES_DIALOG_TITLE)
+    output_params = DialogParams(SAVE_AS_ALLOWED_TYPES, SAVE_AS_DIALOG_TITLE, SAVE_AS_DEFAULT_FILE_NAME)
+    return GUI(input_params, output_params)
